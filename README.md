@@ -18,9 +18,3 @@ npm install
 npm run dev
 ```
 
-## Next Milestone
-
-- Wire live microphone capture
-- Whisper Large V3 transcription via Groq
-- GPT-OSS 120B suggestions and detailed chat responses
-- Auto-refresh loop and streaming chat
