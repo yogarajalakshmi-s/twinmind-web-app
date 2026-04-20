@@ -1,43 +1,13 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-
-type SuggestionKind = 'question_to_ask' | 'talking_point' | 'fact_check' | 'clarification'
-
-interface TranscriptChunk {
-  id: string
-  text: string
-  createdAt: string
-}
-
-interface Suggestion {
-  id: string
-  kind: SuggestionKind
-  preview: string
-  createdAt: string
-}
-
-interface SuggestionBatch {
-  id: string
-  createdAt: string
-  suggestions: Suggestion[]
-}
-
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  createdAt: string
-}
-
-interface AppSettings {
-  groqApiKey: string
-  refreshIntervalSeconds: number
-  liveContextWindowChunks: number
-  answerContextWindowChunks: number
-  liveSuggestionPrompt: string
-  detailedAnswerPrompt: string
-  chatPrompt: string
-}
+import { fetchSuggestionBatch, streamChatCompletion, transcribeSegment } from './api/groqProxy'
+import type {
+  AppSettings,
+  ChatMessage,
+  Suggestion,
+  SuggestionBatch,
+  TranscriptChunk,
+} from './types/meeting'
 
 const defaultSettings: AppSettings = {
   groqApiKey: '',
@@ -52,107 +22,321 @@ const defaultSettings: AppSettings = {
     'You are a live meeting copilot. Respond with practical, context-aware guidance grounded in the transcript. Be concise but actionable.',
 }
 
-const seedTranscript: TranscriptChunk[] = [
-  {
-    id: 't-1',
-    text: "We're talking about how to scale backend capacity to a million concurrent users.",
-    createdAt: new Date().toISOString(),
-  },
-]
-
-const seedSuggestions: Suggestion[] = [
-  {
-    id: 's-1',
-    kind: 'question_to_ask',
-    preview: "What's your current p99 latency on websocket round-trips?",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 's-2',
-    kind: 'talking_point',
-    preview: 'Discord sharding mode: 2,500 guilds per shard, about 150k concurrent users each.',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 's-3',
-    kind: 'fact_check',
-    preview: "Slack's 2024 outage was configuration-related; capacity planning was not the primary root cause.",
-    createdAt: new Date().toISOString(),
-  },
-]
-
 const nowIso = (): string => new Date().toISOString()
 
 function App() {
-  const idCounter = useRef(10)
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null)
+  const settingsRef = useRef(defaultSettings)
+  const transcriptRef = useRef<TranscriptChunk[]>([])
+  const chatHistoryRef = useRef<ChatMessage[]>([])
+
+  const liveRecorderRef = useRef<MediaRecorder | null>(null)
+  const segmentStartedAtRef = useRef(0)
+  const stillRecordingRef = useRef(false)
+
   const [isRecording, setIsRecording] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
-  const [transcript, setTranscript] = useState<TranscriptChunk[]>(seedTranscript)
-  const [suggestionBatches, setSuggestionBatches] = useState<SuggestionBatch[]>([
-    { id: 'b-1', createdAt: nowIso(), suggestions: seedSuggestions },
-  ])
+  const [transcript, setTranscript] = useState<TranscriptChunk[]>([])
+  const [suggestionBatches, setSuggestionBatches] = useState<SuggestionBatch[]>([])
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
 
-  const latestSuggestions = suggestionBatches[0]?.suggestions ?? []
-  const transcriptText = useMemo(() => transcript.map((chunk) => chunk.text).join('\n'), [transcript])
+  const idCounter = useRef(0)
   const nextId = (prefix: string): string => {
     idCounter.current += 1
     return `${prefix}-${idCounter.current}`
   }
 
-  const simulateRefresh = (): void => {
-    const chunkCount = transcript.length + 1
-    const newChunk: TranscriptChunk = {
-      id: `t-${chunkCount}`,
-      createdAt: nowIso(),
-      text: `Chunk ${chunkCount}: Placeholder transcript while API wiring is pending. Next commit will replace this with Whisper Large V3 audio chunks.`,
+  useEffect(() => {
+    settingsRef.current = settings
+  }, [settings])
+
+  useEffect(() => {
+    transcriptRef.current = transcript
+  }, [transcript])
+
+  useEffect(() => {
+    chatHistoryRef.current = chatHistory
+  }, [chatHistory])
+
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [transcript])
+
+  useEffect(() => {
+    if (!isRecording) {
+      return
     }
 
-    const newSuggestions: Suggestion[] = [
-      {
-        id: `s-${Date.now()}-1`,
-        kind: 'question_to_ask',
-        preview: `Ask for a concrete SLA tied to chunk ${chunkCount}.`,
-        createdAt: nowIso(),
-      },
-      {
-        id: `s-${Date.now()}-2`,
-        kind: 'clarification',
-        preview: 'Clarify expected recovery time objective during traffic spikes.',
-        createdAt: nowIso(),
-      },
-      {
-        id: `s-${Date.now()}-3`,
-        kind: 'talking_point',
-        preview: 'Propose phased load tests before full traffic migration.',
-        createdAt: nowIso(),
-      },
-    ]
+    const intervalMs = Math.max(10, settings.refreshIntervalSeconds) * 1000
 
-    setTranscript((prev) => [...prev, newChunk])
-    setSuggestionBatches((prev) => [
-      { id: `b-${Date.now()}`, createdAt: nowIso(), suggestions: newSuggestions },
-      ...prev,
-    ])
+    const updateCountdown = (): void => {
+      const startedAt = segmentStartedAtRef.current
+      if (!startedAt) {
+        return
+      }
+      const elapsed = Date.now() - startedAt
+      const remainingMs = intervalMs - (elapsed % intervalMs)
+      setCountdownSeconds(Math.max(0, Math.ceil(remainingMs / 1000)))
+    }
+
+    const id = window.setInterval(updateCountdown, 500)
+    return () => window.clearInterval(id)
+  }, [isRecording, settings.refreshIntervalSeconds])
+
+  const runTranscribeAndSuggest = useCallback(async (audioBlob: Blob | null) => {
+    const currentSettings = settingsRef.current
+    if (!currentSettings.groqApiKey) {
+      setError('Add your Groq API key in Settings.')
+      return
+    }
+
+    setBusy(true)
+    setError(null)
+
+    try {
+      let transcripts = transcriptRef.current
+
+      if (audioBlob && audioBlob.size > 0) {
+        const text = await transcribeSegment(audioBlob, currentSettings.groqApiKey)
+        if (text) {
+          const chunk: TranscriptChunk = {
+            id: crypto.randomUUID(),
+            text,
+            createdAt: nowIso(),
+          }
+          transcripts = [...transcripts, chunk]
+          transcriptRef.current = transcripts
+          setTranscript(transcripts)
+        }
+      }
+
+      const context = transcripts
+        .slice(-currentSettings.liveContextWindowChunks)
+        .map((chunk) => chunk.text)
+        .join('\n')
+
+      const rows = await fetchSuggestionBatch(
+        currentSettings.groqApiKey,
+        context,
+        currentSettings.liveSuggestionPrompt,
+      )
+
+      const batch = {
+        id: crypto.randomUUID(),
+        createdAt: nowIso(),
+        suggestions: rows.map((row) => ({
+          id: crypto.randomUUID(),
+          kind: row.kind,
+          preview: row.preview,
+          createdAt: nowIso(),
+        })),
+      }
+
+      setSuggestionBatches((previous) => [batch, ...previous])
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Refresh failed.'
+      setError(message)
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isRecording) {
+      stillRecordingRef.current = false
+      return
+    }
+
+    stillRecordingRef.current = true
+    let stream: MediaStream | null = null
+    let intervalId: number | null = null
+    let cancelled = false
+
+    const intervalMs = Math.max(10, settings.refreshIntervalSeconds) * 1000
+
+    const startSegment = (): void => {
+      if (!stream || cancelled) {
+        return
+      }
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : undefined
+
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
+
+      const chunks: BlobPart[] = []
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data)
+        }
+      })
+
+      recorder.addEventListener('stop', () => {
+        void (async () => {
+          const blob = new Blob(chunks, { type: recorder.mimeType })
+          try {
+            if (blob.size > 0) {
+              await runTranscribeAndSuggest(blob)
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Recording segment failed.'
+            setError(message)
+          } finally {
+            if (stillRecordingRef.current && stream && !cancelled) {
+              segmentStartedAtRef.current = Date.now()
+              startSegment()
+            }
+          }
+        })()
+      })
+
+      liveRecorderRef.current = recorder
+      segmentStartedAtRef.current = Date.now()
+      recorder.start()
+    }
+
+    const stopSegment = (): void => {
+      if (liveRecorderRef.current && liveRecorderRef.current.state === 'recording') {
+        liveRecorderRef.current.stop()
+      }
+    }
+
+    void (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      } catch {
+        setError('Microphone permission is required to record.')
+        setIsRecording(false)
+        return
+      }
+
+      if (cancelled) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+
+      startSegment()
+      intervalId = window.setInterval(stopSegment, intervalMs)
+    })()
+
+    return () => {
+      cancelled = true
+      stillRecordingRef.current = false
+      if (intervalId !== null) {
+        window.clearInterval(intervalId)
+      }
+      stopSegment()
+      stream?.getTracks().forEach((track) => track.stop())
+      liveRecorderRef.current = null
+    }
+  }, [isRecording, settings.refreshIntervalSeconds, runTranscribeAndSuggest])
+
+  const onManualRefresh = async (): Promise<void> => {
+    if (busy) {
+      return
+    }
+    if (isRecording) {
+      if (liveRecorderRef.current && liveRecorderRef.current.state === 'recording') {
+        liveRecorderRef.current.stop()
+      }
+      return
+    }
+    await runTranscribeAndSuggest(null)
   }
 
+  const appendAssistantMessage = useCallback((assistantId: string, delta: string) => {
+    setChatHistory((previous) =>
+      previous.map((message) =>
+        message.id === assistantId ? { ...message, content: message.content + delta } : message,
+      ),
+    )
+  }, [])
+
+  const runChat = useCallback(
+    async (userText: string, mode: 'chat' | 'detail', suggestion?: Suggestion) => {
+      const currentSettings = settingsRef.current
+      if (!currentSettings.groqApiKey) {
+        setError('Add your Groq API key in Settings.')
+        return
+      }
+
+      const trimmed = userText.trim()
+      if (!trimmed) {
+        return
+      }
+
+      const userMessage: ChatMessage = {
+        id: nextId('m-user'),
+        role: 'user',
+        content: trimmed,
+        createdAt: nowIso(),
+      }
+
+      const assistantMessage: ChatMessage = {
+        id: nextId('m-assistant'),
+        role: 'assistant',
+        content: '',
+        createdAt: nowIso(),
+      }
+
+      setChatHistory((previous) => [...previous, userMessage, assistantMessage])
+      setError(null)
+
+      const transcriptContext = transcriptRef.current
+        .slice(-currentSettings.answerContextWindowChunks)
+        .map((chunk) => `[${chunk.createdAt}] ${chunk.text}`)
+        .join('\n')
+
+      const history = [...chatHistoryRef.current, userMessage]
+      const messages = history.map((message) => ({
+        role: message.role,
+        content:
+          mode === 'detail' && suggestion && message.id === userMessage.id
+            ? `Suggestion type: ${suggestion.kind.replace(/_/g, ' ')}\n${message.content}`
+            : message.content,
+      }))
+
+      const systemPrompt =
+        mode === 'detail' ? currentSettings.detailedAnswerPrompt : currentSettings.chatPrompt
+
+      setBusy(true)
+      try {
+        await streamChatCompletion({
+          apiKey: currentSettings.groqApiKey,
+          systemPrompt,
+          transcriptContext,
+          messages,
+          onDelta: (delta) => appendAssistantMessage(assistantMessage.id, delta),
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Chat request failed.'
+        setError(message)
+        setChatHistory((previous) =>
+          previous.map((msg) =>
+            msg.id === assistantMessage.id ? { ...msg, content: `Error: ${message}` } : msg,
+          ),
+        )
+      } finally {
+        setBusy(false)
+      }
+    },
+    [appendAssistantMessage],
+  )
+
   const askSuggestion = (suggestion: Suggestion): void => {
-    const userMessage: ChatMessage = {
-      id: nextId('m-user'),
-      role: 'user',
-      content: suggestion.preview,
-      createdAt: nowIso(),
-    }
-    const assistantMessage: ChatMessage = {
-      id: nextId('m-assistant'),
-      role: 'assistant',
-      content:
-        'Detailed response placeholder. Next commit will connect this path to Groq GPT-OSS 120B using the on-click prompt and selected transcript context window.',
-      createdAt: nowIso(),
-    }
-    setChatHistory((prev) => [...prev, userMessage, assistantMessage])
+    const label = suggestion.kind.replace(/_/g, ' ')
+    void runChat(`[${label}] ${suggestion.preview}`, 'detail', suggestion)
   }
 
   const onSubmitChat = (event: FormEvent<HTMLFormElement>): void => {
@@ -161,20 +345,7 @@ function App() {
     if (!value) {
       return
     }
-    const userMessage: ChatMessage = {
-      id: nextId('m-user'),
-      role: 'user',
-      content: value,
-      createdAt: nowIso(),
-    }
-    const assistantMessage: ChatMessage = {
-      id: nextId('m-assistant'),
-      role: 'assistant',
-      content:
-        'Chat response placeholder. This will be replaced with streamed GPT-OSS 120B responses in the next integration commit.',
-      createdAt: nowIso(),
-    }
-    setChatHistory((prev) => [...prev, userMessage, assistantMessage])
+    void runChat(value, 'chat')
     setChatInput('')
   }
 
@@ -200,55 +371,83 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
+  const latestSuggestions = suggestionBatches[0]?.suggestions ?? []
+  const transcriptText = useMemo(() => transcript.map((chunk) => chunk.text).join('\n'), [transcript])
+
   return (
     <div className="app-shell">
       <header className="topbar">
         <h1>TwinMind Live Suggestions</h1>
         <div className="topbar-actions">
-          <button onClick={() => setSettingsOpen(true)}>Settings</button>
-          <button onClick={exportSession}>Export Session</button>
+          <button type="button" onClick={() => setSettingsOpen(true)}>
+            Settings
+          </button>
+          <button type="button" onClick={exportSession}>
+            Export Session
+          </button>
         </div>
       </header>
+
+      {error && (
+        <div className="banner error" role="alert">
+          {error}
+        </div>
+      )}
 
       <main className="columns">
         <section className="panel">
           <div className="panel-header">
-            <h2>1. Mic & Transcript</h2>
-            <button onClick={() => setIsRecording((value) => !value)}>
+            <h2>1. Mic &amp; Transcript</h2>
+            <button type="button" onClick={() => setIsRecording((value) => !value)}>
               {isRecording ? 'Stop Mic' : 'Start Mic'}
             </button>
           </div>
           <p className="panel-note">
             {isRecording
-              ? `Recording active. Refreshing every ${settings.refreshIntervalSeconds}s.`
-              : 'Mic paused. Click Start Mic to begin session.'}
+              ? `Recording active. Flushing audio about every ${settings.refreshIntervalSeconds}s to Whisper Large V3.${
+                  countdownSeconds !== null ? ` Next flush in ~${countdownSeconds}s.` : ''
+                }`
+              : 'Mic paused. Start recording to append transcript chunks automatically.'}
           </p>
-          <div className="list">
+          <div className="list transcript-list">
+            {transcript.length === 0 && <p className="empty-hint">No transcript yet.</p>}
             {transcript.map((chunk) => (
               <article key={chunk.id} className="item">
                 <time>{new Date(chunk.createdAt).toLocaleTimeString()}</time>
                 <p>{chunk.text}</p>
               </article>
             ))}
+            <div ref={transcriptEndRef} />
           </div>
         </section>
 
         <section className="panel">
           <div className="panel-header">
             <h2>2. Live Suggestions</h2>
-            <button onClick={simulateRefresh}>Refresh</button>
+            <button type="button" onClick={() => void onManualRefresh()} disabled={busy}>
+              {busy ? 'Working…' : 'Refresh'}
+            </button>
           </div>
           <p className="panel-note">
-            Exactly 3 suggestions per batch. Newest batch appears on top.
+            Each refresh asks GPT-OSS 120B for exactly 3 suggestions using your live prompt and transcript
+            window. New batches stack on top.
+            {isRecording && countdownSeconds !== null && (
+              <span className="countdown"> Auto-flush in ~{countdownSeconds}s.</span>
+            )}
           </p>
           <div className="list">
+            {latestSuggestions.length === 0 && (
+              <p className="empty-hint">No suggestions yet. Refresh once your key is set.</p>
+            )}
             {latestSuggestions.map((suggestion) => (
               <button
                 key={suggestion.id}
+                type="button"
                 className="suggestion"
                 onClick={() => askSuggestion(suggestion)}
+                disabled={busy}
               >
-                <span>{suggestion.kind.replace('_', ' ')}</span>
+                <span>{suggestion.kind.replace(/_/g, ' ')}</span>
                 <strong>{suggestion.preview}</strong>
               </button>
             ))}
@@ -267,13 +466,17 @@ function App() {
           <div className="panel-header">
             <h2>3. Chat</h2>
           </div>
-          <p className="panel-note">One continuous chat thread for this session.</p>
-          <div className="list">
+          <p className="panel-note">Streaming answers use GPT-OSS 120B with your chat prompt and transcript.</p>
+          <div className="list chat-list">
+            {chatHistory.length === 0 && (
+              <p className="empty-hint">Click a suggestion or type a question to start.</p>
+            )}
             {chatHistory.map((message) => (
               <article key={message.id} className={`item ${message.role}`}>
                 <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
                 <p>
-                  <strong>{message.role === 'user' ? 'You' : 'Assistant'}:</strong> {message.content}
+                  <strong>{message.role === 'user' ? 'You' : 'Assistant'}:</strong>{' '}
+                  {message.content || (message.role === 'assistant' && busy ? '…' : '')}
                 </p>
               </article>
             ))}
@@ -283,8 +486,11 @@ function App() {
               value={chatInput}
               onChange={(event) => setChatInput(event.target.value)}
               placeholder="Type a question..."
+              disabled={busy}
             />
-            <button type="submit">Send</button>
+            <button type="submit" disabled={busy}>
+              Send
+            </button>
           </form>
         </section>
       </main>
@@ -294,7 +500,9 @@ function App() {
           <div className="settings-content">
             <div className="panel-header">
               <h2>Settings</h2>
-              <button onClick={() => setSettingsOpen(false)}>Close</button>
+              <button type="button" onClick={() => setSettingsOpen(false)}>
+                Close
+              </button>
             </div>
             <label>
               Groq API Key
@@ -302,7 +510,7 @@ function App() {
                 type="password"
                 value={settings.groqApiKey}
                 onChange={(event) =>
-                  setSettings((prev) => ({ ...prev, groqApiKey: event.target.value.trim() }))
+                  setSettings((previous) => ({ ...previous, groqApiKey: event.target.value.trim() }))
                 }
                 placeholder="gsk_..."
               />
@@ -312,7 +520,7 @@ function App() {
               <textarea
                 value={settings.liveSuggestionPrompt}
                 onChange={(event) =>
-                  setSettings((prev) => ({ ...prev, liveSuggestionPrompt: event.target.value }))
+                  setSettings((previous) => ({ ...previous, liveSuggestionPrompt: event.target.value }))
                 }
               />
             </label>
@@ -321,7 +529,7 @@ function App() {
               <textarea
                 value={settings.detailedAnswerPrompt}
                 onChange={(event) =>
-                  setSettings((prev) => ({ ...prev, detailedAnswerPrompt: event.target.value }))
+                  setSettings((previous) => ({ ...previous, detailedAnswerPrompt: event.target.value }))
                 }
               />
             </label>
@@ -329,7 +537,7 @@ function App() {
               Chat Prompt
               <textarea
                 value={settings.chatPrompt}
-                onChange={(event) => setSettings((prev) => ({ ...prev, chatPrompt: event.target.value }))}
+                onChange={(event) => setSettings((previous) => ({ ...previous, chatPrompt: event.target.value }))}
               />
             </label>
             <label>
@@ -339,8 +547,8 @@ function App() {
                 min={1}
                 value={settings.liveContextWindowChunks}
                 onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
+                  setSettings((previous) => ({
+                    ...previous,
                     liveContextWindowChunks: Number(event.target.value) || 1,
                   }))
                 }
@@ -353,8 +561,8 @@ function App() {
                 min={1}
                 value={settings.answerContextWindowChunks}
                 onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
+                  setSettings((previous) => ({
+                    ...previous,
                     answerContextWindowChunks: Number(event.target.value) || 1,
                   }))
                 }
@@ -367,8 +575,8 @@ function App() {
                 min={10}
                 value={settings.refreshIntervalSeconds}
                 onChange={(event) =>
-                  setSettings((prev) => ({
-                    ...prev,
+                  setSettings((previous) => ({
+                    ...previous,
                     refreshIntervalSeconds: Number(event.target.value) || 10,
                   }))
                 }

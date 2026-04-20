@@ -45,6 +45,20 @@ textarea {
   font-weight: 600;
 }
 
+.banner {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  border: 1px solid #2d3a57;
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.banner.error {
+  border-color: #b45353;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.25);
+}
+
 .topbar-actions {
   display: flex;
   gap: 8px;
@@ -86,6 +100,17 @@ textarea {
   margin: 0;
   color: #94a3b8;
   font-size: 12px;
+}
+
+.empty-hint {
+  margin: 0;
+  color: #7c8ca8;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.countdown {
+  color: #a8c7ff;
 }
 
 button {
