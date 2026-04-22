@@ -37,8 +37,3 @@ This runs the Vite dev server and the API proxy together. Open the URL Vite prin
 ## Deployment note
 
 `npm run build` produces static files only. For a public deployment you’ll need the proxy (or equivalent serverless routes) running alongside the frontend, with the same `/api/*` paths. A follow-up commit can add a host-specific layout (for example Vercel serverless handlers).
-
-## Milestones
-
-- **Commit 1:** Three-column UI, settings scaffolding, export.
-- **Commit 2:** Groq integration (Whisper + GPT-OSS 120B), mic chunking, streaming chat, dev proxy.

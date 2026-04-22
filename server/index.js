@@ -86,6 +86,33 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
 })
 
+/** Validates the user key against Groq (lightweight GET /models). */
+app.post('/api/verify', async (req, res) => {
+  const apiKey = getApiKey(req)
+  if (!apiKey) {
+    res.status(401).json({ error: 'Missing Groq API key.' })
+    return
+  }
+
+  try {
+    const groqRes = await fetch(`${GROQ_BASE}/models`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    const text = await groqRes.text()
+    if (!groqRes.ok) {
+      res.status(groqRes.status).type('application/json').send(text)
+      return
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Verify request failed.'
+    res.status(502).json({ error: message })
+  }
+})
+
 app.post('/api/transcribe', upload.single('file'), async (req, res) => {
   const apiKey = getApiKey(req)
   if (!apiKey) {

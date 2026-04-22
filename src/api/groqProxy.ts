@@ -19,6 +19,26 @@ async function readErrorMessage(response: Response): Promise<string> {
   return raw || `${response.status} ${response.statusText}`
 }
 
+/** Confirms the local proxy is up, then checks the Groq API key. */
+export async function verifyGroqSetup(apiKey: string): Promise<void> {
+  const health = await fetch('/api/health')
+  if (!health.ok) {
+    throw new Error(
+      'Cannot reach the local API proxy. Run `npm run dev` so Vite and the server on port 8787 both start.',
+    )
+  }
+
+  const response = await fetch('/api/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response))
+  }
+}
+
 export async function transcribeSegment(blob: Blob, apiKey: string): Promise<string> {
   const body = new FormData()
   body.set('file', blob, 'segment.webm')

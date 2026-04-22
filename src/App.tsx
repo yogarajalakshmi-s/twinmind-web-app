@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { fetchSuggestionBatch, streamChatCompletion, transcribeSegment } from './api/groqProxy'
+import {
+  fetchSuggestionBatch,
+  streamChatCompletion,
+  transcribeSegment,
+  verifyGroqSetup,
+} from './api/groqProxy'
 import type {
   AppSettings,
   ChatMessage,
@@ -44,6 +49,10 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
+  const [connectionTest, setConnectionTest] = useState<{
+    status: 'idle' | 'running' | 'success' | 'failed'
+    message: string
+  }>({ status: 'idle', message: '' })
 
   const idCounter = useRef(0)
   const nextId = (prefix: string): string => {
@@ -349,6 +358,28 @@ function App() {
     setChatInput('')
   }
 
+  const onTestConnection = async (): Promise<void> => {
+    const key = settings.groqApiKey.trim()
+    if (!key) {
+      setConnectionTest({
+        status: 'failed',
+        message: 'Paste your Groq API key above first.',
+      })
+      return
+    }
+    setConnectionTest({ status: 'running', message: 'Checking local proxy and Groq…' })
+    try {
+      await verifyGroqSetup(key)
+      setConnectionTest({
+        status: 'success',
+        message: 'Proxy is up and Groq accepted your API key.',
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Connection test failed.'
+      setConnectionTest({ status: 'failed', message })
+    }
+  }
+
   const exportSession = (): void => {
     const payload = {
       exportedAt: nowIso(),
@@ -515,6 +546,33 @@ function App() {
                 placeholder="gsk_..."
               />
             </label>
+            <p className="settings-hint">
+              Paste your key here only. Do not put API keys in source code, <code>.env</code> committed to GitHub, or
+              the TwinMind README—this assignment expects the user to supply their own key at runtime.
+            </p>
+            <div className="settings-test-row">
+              <button
+                type="button"
+                onClick={() => void onTestConnection()}
+                disabled={connectionTest.status === 'running'}
+              >
+                {connectionTest.status === 'running' ? 'Testing…' : 'Test connection'}
+              </button>
+              {connectionTest.status !== 'idle' && (
+                <p
+                  className={
+                    connectionTest.status === 'success'
+                      ? 'settings-test-msg success'
+                      : connectionTest.status === 'failed'
+                        ? 'settings-test-msg error'
+                        : 'settings-test-msg'
+                  }
+                  role="status"
+                >
+                  {connectionTest.message}
+                </p>
+              )}
+            </div>
             <label>
               Live Suggestion Prompt
               <textarea

@@ -4,14 +4,14 @@
 
 :root {
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #e5e7eb;
-  background-color: #0b1220;
+  color: #0f172a;
+  background-color: #f8fafc;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top, #13213d 0%, #0b1220 40%, #090f1b 100%);
+  background: #ffffff;
 }
 
 #root {
@@ -49,14 +49,14 @@ textarea {
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 13px;
-  border: 1px solid #2d3a57;
-  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid #fecaca;
+  background: #fff1f2;
 }
 
 .banner.error {
-  border-color: #b45353;
-  color: #fecaca;
-  background: rgba(127, 29, 29, 0.25);
+  border-color: #fca5a5;
+  color: #991b1b;
+  background: #fee2e2;
 }
 
 .topbar-actions {
@@ -73,9 +73,9 @@ textarea {
 }
 
 .panel {
-  border: 1px solid #24324f;
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.85);
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   min-height: 70vh;
@@ -93,37 +93,37 @@ textarea {
 .panel-header h2 {
   margin: 0;
   font-size: 14px;
-  color: #cbd5e1;
+  color: #0f172a;
 }
 
 .panel-note {
   margin: 0;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 12px;
 }
 
 .empty-hint {
   margin: 0;
-  color: #7c8ca8;
+  color: #64748b;
   font-size: 12px;
   font-style: italic;
 }
 
 .countdown {
-  color: #a8c7ff;
+  color: #1d4ed8;
 }
 
 button {
-  border: 1px solid #2d3a57;
-  background: #1f2a42;
-  color: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
 }
 
 button:hover {
-  background: #273759;
+  background: #f1f5f9;
 }
 
 .list {
@@ -135,25 +135,26 @@ button:hover {
 }
 
 .item {
-  border: 1px solid #2d3a57;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 10px;
-  background: rgba(15, 23, 42, 0.6);
+  background: #f8fafc;
 }
 
 .item p {
   margin: 6px 0 0;
-  color: #dbe5f3;
+  color: #0f172a;
   font-size: 13px;
 }
 
 .item time {
-  color: #7f8ea8;
+  color: #64748b;
   font-size: 11px;
 }
 
 .item.assistant {
-  border-color: #35618c;
+  border-color: #93c5fd;
+  background: #eff6ff;
 }
 
 .suggestion {
@@ -164,23 +165,23 @@ button:hover {
 }
 
 .suggestion span {
-  color: #8ab4e1;
+  color: #1d4ed8;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .suggestion strong {
-  color: #e6edf7;
+  color: #0f172a;
   font-size: 13px;
   font-weight: 500;
 }
 
 .history {
   margin-top: auto;
-  border-top: 1px solid #24324f;
+  border-top: 1px solid #e2e8f0;
   padding-top: 8px;
-  color: #8fa2be;
+  color: #64748b;
   font-size: 12px;
 }
 
@@ -193,16 +194,16 @@ button:hover {
 .chat-form input {
   flex: 1;
   border-radius: 8px;
-  border: 1px solid #2d3a57;
+  border: 1px solid #cbd5e1;
   padding: 8px 10px;
-  background: #101a2f;
-  color: #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
 }
 
 .settings-drawer {
   position: fixed;
   inset: 0;
-  background: rgba(2, 6, 23, 0.82);
+  background: rgba(15, 23, 42, 0.35);
   display: grid;
   place-items: center;
   padding: 16px;
@@ -213,8 +214,8 @@ button:hover {
   max-height: 90vh;
   overflow: auto;
   border-radius: 12px;
-  border: 1px solid #2a3a5c;
-  background: #0f172a;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -225,16 +226,16 @@ button:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #cbd5e1;
+  color: #0f172a;
   font-size: 13px;
 }
 
 .settings-content input,
 .settings-content textarea {
   border-radius: 8px;
-  border: 1px solid #2d3a57;
-  background: #101a2f;
-  color: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
   padding: 8px;
 }
 
@@ -242,10 +243,49 @@ button:hover {
   min-height: 88px;
 }
 
+.settings-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.settings-hint code {
+  font-size: 11px;
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.settings-test-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-test-msg {
+  margin: 0;
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.settings-test-msg.success {
+  color: #15803d;
+}
+
+.settings-test-msg.error {
+  color: #b91c1c;
+}
+
 .settings-preview {
-  border: 1px solid #2d3a57;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 10px;
+  background: #f8fafc;
 }
 
 .settings-preview h3 {
@@ -257,7 +297,7 @@ button:hover {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #c8d5ea;
+  color: #334155;
   font-size: 12px;
 }
 
