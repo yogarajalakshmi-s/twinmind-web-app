@@ -1,12 +1,19 @@
 /**
  * Local dev proxy for Groq so the browser never talks to Groq directly.
  * The user's API key is forwarded per request (Authorization or form/json field).
+ *
+ * In production (NODE_ENV=production), also serves the Vite build from ../dist
+ * so one process can host the SPA and /api/* on the same origin.
  */
 import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const PORT = Number(process.env.PORT) || 8787
 const GROQ_BASE = 'https://api.groq.com/openai/v1'
@@ -303,6 +310,11 @@ app.post('/api/chat', async (req, res) => {
   }
 })
 
-app.listen(PORT, () => {
-  console.log(`TwinMind Groq proxy listening on http://localhost:${PORT}`)
-})
+// Local
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`TwinMind Groq proxy listening on http://localhost:${PORT}`)
+  })
+}
+
+export default app
