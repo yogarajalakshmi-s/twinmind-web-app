@@ -14,6 +14,8 @@ import type {
   TranscriptChunk,
 } from './types/meeting'
 
+import ReactMarkdown from 'react-markdown'
+
 const defaultSettings: AppSettings = {
   groqApiKey: '',
   refreshIntervalSeconds: 30,
@@ -41,7 +43,10 @@ function App() {
 
   const [isRecording, setIsRecording] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings)
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const savedKey = localStorage.getItem('groq_api_key') ?? ''
+    return { ...defaultSettings, groqApiKey: savedKey }
+  })
   const [transcript, setTranscript] = useState<TranscriptChunk[]>([])
   const [suggestionBatches, setSuggestionBatches] = useState<SuggestionBatch[]>([])
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
@@ -505,10 +510,16 @@ function App() {
             {chatHistory.map((message) => (
               <article key={message.id} className={`item ${message.role}`}>
                 <time>{new Date(message.createdAt).toLocaleTimeString()}</time>
-                <p>
+                <div className="chat-message-body">
                   <strong>{message.role === 'user' ? 'You' : 'Assistant'}:</strong>{' '}
-                  {message.content || (message.role === 'assistant' && busy ? '…' : '')}
-                </p>
+                  {message.role === 'assistant' ? (
+                    <ReactMarkdown>
+                      {message.content || (busy ? '…' : '')}
+                    </ReactMarkdown>
+                  ) : (
+                    <span>{message.content}</span>
+                  )}
+                </div>
               </article>
             ))}
           </div>
@@ -540,9 +551,11 @@ function App() {
               <input
                 type="password"
                 value={settings.groqApiKey}
-                onChange={(event) =>
-                  setSettings((previous) => ({ ...previous, groqApiKey: event.target.value.trim() }))
-                }
+                onChange={(event) => {
+                  const key = event.target.value.trim()
+                  localStorage.setItem('groq_api_key', key)
+                  setSettings((previous) => ({ ...previous, groqApiKey: key }))
+                }}
                 placeholder="gsk_..."
               />
             </label>
