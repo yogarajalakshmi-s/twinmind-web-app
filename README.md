@@ -1,7 +1,7 @@
-# TwinMind Live Suggestions
+# TwinMind Live Suggestions [[Link](https://twinmind-web-app.vercel.app/)]
 
 A live meeting copilot that listens to your mic, transcribes what's being said,
-and surfaces 3 useful suggestions every 30 seconds — questions to ask, talking
+and surfaces 3 useful suggestions every 30 seconds - questions to ask, talking
 points, fact-checks, or clarifications based on the conversation.
 
 ## Stack
@@ -23,14 +23,14 @@ The key is saved in your browser so you won't need to re-enter it.
 
 ## How to use it
 
-1. Click **Start Mic** — it starts recording and will automatically transcribe
+1. Click **Start Mic** - it starts recording and will automatically transcribe
    and generate suggestions every 30 seconds.
-2. Watch the **Live Suggestions** column — 3 new cards appear each cycle.
+2. Watch the **Live Suggestions** column - 3 new cards appear each cycle.
    Click any card to get a detailed answer in the chat panel.
 3. Hit **Refresh** any time to force an early update without waiting.
 4. You can also type questions directly in the chat panel on the right.
-5. When you're done, click **Export Session** to download everything —
-   transcript, all suggestion batches, and the full chat — as a JSON file.
+5. When you're done, click **Export Session** to download everything:
+   transcript, all suggestion batches and the full chat as a JSON file.
 
 ## Prompt strategy
 
@@ -47,7 +47,7 @@ Both prompts are editable in Settings if you want to experiment.
 
 ## Tradeoffs
 
-- 30-second audio chunks work best with Whisper — shorter clips sometimes
+- 30-second audio chunks work best with Whisper: shorter clips sometimes
   return empty text, so the default interval is intentional.
 - The proxy adds a small hop but keeps the API key out of the browser entirely.
 - Chat responses stream token by token for faster perceived latency.
