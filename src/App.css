@@ -182,3 +182,6 @@
     border-right-color: var(--border);
   }
 }
+
+.older-batch { opacity: 0.65; margin-top: 1rem; }
+.batch-time { font-size: 0.75rem; color: #888; margin-bottom: 0.5rem; }

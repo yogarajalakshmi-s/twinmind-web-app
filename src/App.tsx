@@ -490,10 +490,21 @@ function App() {
           </div>
           <div className="history">
             {suggestionBatches.slice(1).map((batch) => (
-              <p key={batch.id}>
-                Older batch at {new Date(batch.createdAt).toLocaleTimeString()} ({batch.suggestions.length}{' '}
-                suggestions)
-              </p>
+              <div key={batch.id} className="older-batch">
+                <p className="batch-time">{new Date(batch.createdAt).toLocaleTimeString()}</p>
+                {batch.suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    className="suggestion"
+                    onClick={() => askSuggestion(suggestion)}
+                    disabled={busy}
+                  >
+                    <span>{suggestion.kind.replace(/_/g, ' ')}</span>
+                    <strong>{suggestion.preview}</strong>
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </section>
