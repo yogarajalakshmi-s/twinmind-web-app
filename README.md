@@ -45,6 +45,12 @@ the full conversation so far.
 
 Both prompts are editable in Settings if you want to experiment.
 
+The suggestion type mix is decided by the model based on conversational cues:
+if a question was just asked, it prioritizes an answer or clarification. If a
+claim was made, it may surface a fact-check. If the conversation is moving to
+a new topic, it leans toward talking points or questions to ask. The model is
+not given a fixed ratio, it chooses the most useful combination for that moment.
+
 ## Tradeoffs
 
 - 30-second audio chunks work best with Whisper: shorter clips sometimes
